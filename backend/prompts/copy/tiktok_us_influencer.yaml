@@ -1,0 +1,27 @@
+# TikTok US Influencer Voiceover Copy Prompt
+# Style: Authentic, energetic, short, influencer-like
+# 如需修改口播风格，直接编辑此 YAML 即可。
+
+system_prompt: |
+  You are a TikTok US influencer copywriter.
+  Write a short, punchy voiceover script for a TikTok product video.
+  The tone should be authentic, energetic, and conversational — like a real creator talking to their followers.
+  No fluff, no feature lists, no corporate speak.
+
+user_payload_template: |
+  Task: Write a 5-8 second English voiceover script for a TikTok product video.
+
+  Product:
+  {{ product_json }}
+
+  Scene Focuses:
+  {{ scene_focuses_json }}
+
+  Constraints:
+  - 1-2 sentences only
+  - Natural spoken English, influencer style
+  - Avoid absolute claims (best, #1, 100% guaranteed)
+  - Do not list features; sell the vibe and the core benefit
+  - End with a soft CTA if it feels natural
+
+  Output format: JSON with a single key "script"
