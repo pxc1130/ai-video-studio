@@ -192,8 +192,30 @@ async def _validate_saved_cookie(account_file: str, *, headless: bool) -> bool:
     return False
 
 
-async def douyin_setup(account_file, handle=False, return_detail=False, qrcode_callback=None, headless: bool = True):
+async def douyin_setup(
+    account_file,
+    handle=False,
+    return_detail=False,
+    qrcode_callback=None,
+    headless: bool = True,
+    force_scan: bool = False,
+    keep_browser_open_seconds: int = 0,
+    login_poll_interval: float = 3,
+    login_max_checks: int = 100,
+):
     is_cookie_valid = False
+    if force_scan and handle:
+        logger.info(_msg("📷", "已启用强制扫码登录模式"))
+        result = await douyin_cookie_gen(
+            account_file,
+            qrcode_callback=qrcode_callback,
+            poll_interval=login_poll_interval,
+            max_checks=login_max_checks,
+            headless=headless,
+            keep_browser_open_seconds=keep_browser_open_seconds,
+        )
+        return result if return_detail else result["success"]
+
     if os.path.exists(account_file):
         try:
             is_cookie_valid = await cookie_auth_with_mode(account_file, headless=headless)
@@ -213,7 +235,14 @@ async def douyin_setup(account_file, handle=False, return_detail=False, qrcode_c
             result = _build_login_result(False, "cookie_invalid", "cookie文件不存在或已失效", account_file)
             return result if return_detail else False
         logger.info(_msg("🥹", "cookie 失效，准备重新登录"))
-        result = await douyin_cookie_gen(account_file, qrcode_callback=qrcode_callback, headless=headless)
+        result = await douyin_cookie_gen(
+            account_file,
+            qrcode_callback=qrcode_callback,
+            poll_interval=login_poll_interval,
+            max_checks=login_max_checks,
+            headless=headless,
+            keep_browser_open_seconds=keep_browser_open_seconds,
+        )
         return result if return_detail else result["success"]
 
     result = _build_login_result(True, "cookie_valid", "cookie有效", account_file)
@@ -325,18 +354,21 @@ async def _extract_logged_in_account_name(page) -> str:
     return ""
 
 
-async def _wait_for_douyin_login(page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: int = 3, max_checks: int = 100) -> dict:
+async def _wait_for_douyin_login(page, account_file: str, qrcode_info: dict, qrcode_callback=None, poll_interval: float = 3, max_checks: int = 100) -> dict:
     qrcode_path = Path(qrcode_info["image_path"])
     for _ in range(max_checks):
         if await _is_douyin_login_completed(page):
             return _build_login_result(True, "success", "抖音扫码登录成功", account_file, qrcode_info, page.url)
 
         expired_box = page.get_by_text("二维码失效", exact=True).locator("..").first
-        if await expired_box.count() and await expired_box.is_visible():
-            await expired_box.click()
-            await asyncio.sleep(1)
-            qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_path, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info["image_path"])
+        try:
+            if await expired_box.count() and await expired_box.is_visible():
+                await expired_box.click()
+                await asyncio.sleep(1)
+                qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_path, qrcode_callback=qrcode_callback)
+                qrcode_path = Path(qrcode_info["image_path"])
+        except Exception:
+            pass
 
         await asyncio.sleep(poll_interval)
 
@@ -346,9 +378,10 @@ async def _wait_for_douyin_login(page, account_file: str, qrcode_info: dict, qrc
 async def douyin_cookie_gen(
     account_file,
     qrcode_callback: Callable[[dict[str, Any]], Any] | None = None,
-    poll_interval: int = 3,
+    poll_interval: float = 3,
     max_checks: int = 100,
     headless: bool = True,
+    keep_browser_open_seconds: int = 0,
 ):
     async_playwright = _resolve_async_playwright()
     async with async_playwright() as playwright:
@@ -386,6 +419,8 @@ async def douyin_cookie_gen(
         except Exception as exc:
             result = _build_login_result(False, "failed", str(exc), account_file)
         finally:
+            if not headless and keep_browser_open_seconds > 0:
+                await asyncio.sleep(min(300, keep_browser_open_seconds))
             remove_qrcode_file(qrcode_path)
             await context.close()
             await browser.close()

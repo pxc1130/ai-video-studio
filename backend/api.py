@@ -81,6 +81,10 @@ PUBLISH_MODE = os.getenv("PUBLISH_MODE", "native_internal").strip().lower()
 PUBLISH_HEADLESS = os.getenv("PUBLISH_HEADLESS", "false").lower() in ("1", "true", "yes")
 PUBLISH_TASK_MAX_ENTRIES = int(os.getenv("PUBLISH_TASK_MAX_ENTRIES", "200"))
 PUBLISH_LOGIN_SESSION_MAX_ENTRIES = int(os.getenv("PUBLISH_LOGIN_SESSION_MAX_ENTRIES", "100"))
+PUBLISH_LOGIN_FORCE_SCAN = os.getenv("PUBLISH_LOGIN_FORCE_SCAN", "true").lower() in ("1", "true", "yes")
+PUBLISH_LOGIN_KEEP_BROWSER_OPEN_SECONDS = int(os.getenv("PUBLISH_LOGIN_KEEP_BROWSER_OPEN_SECONDS", "20"))
+PUBLISH_LOGIN_POLL_INTERVAL_SECONDS = float(os.getenv("PUBLISH_LOGIN_POLL_INTERVAL_SECONDS", "2"))
+PUBLISH_LOGIN_MAX_CHECKS = int(os.getenv("PUBLISH_LOGIN_MAX_CHECKS", "180"))
 AUTO_PUBLISH_DOUYIN_AFTER_ASSEMBLE = os.getenv("AUTO_PUBLISH_DOUYIN_AFTER_ASSEMBLE", "false").lower() in ("1", "true", "yes")
 AUTO_PUBLISH_DOUYIN_ACCOUNT = os.getenv("AUTO_PUBLISH_DOUYIN_ACCOUNT", "").strip()
 AUTO_PUBLISH_DOUYIN_TAGS_RAW = os.getenv("AUTO_PUBLISH_DOUYIN_TAGS", "")
@@ -177,6 +181,8 @@ class DouyinPublishRequest(BaseModel):
 class DouyinLoginStartRequest(BaseModel):
     account_name: str = ""
     headless: bool | None = None
+    force_scan: bool | None = None
+    keep_browser_open_seconds: int | None = None
 
 
 def _is_publish_enabled() -> bool:
@@ -570,7 +576,13 @@ def _run_douyin_publish_task(task_id: str) -> None:
             log("publish_douyin_failed", str(exc))
 
 
-def _run_douyin_login_session(session_id: str, account_name: str, headless: bool) -> None:
+def _run_douyin_login_session(
+    session_id: str,
+    account_name: str,
+    headless: bool,
+    force_scan: bool,
+    keep_browser_open_seconds: int,
+) -> None:
     session = _get_login_session(session_id)
     if not session:
         return
@@ -580,7 +592,7 @@ def _run_douyin_login_session(session_id: str, account_name: str, headless: bool
     _update_login_session(
         session_id,
         status="initializing",
-        message="正在初始化抖音登录会话",
+        message="正在打开抖音登录窗口，请稍候",
         updated_at=now_iso(),
         account_file=str(account_file),
     )
@@ -602,6 +614,10 @@ def _run_douyin_login_session(session_id: str, account_name: str, headless: bool
                 return_detail=True,
                 qrcode_callback=_qrcode_callback,
                 headless=headless,
+                force_scan=force_scan,
+                keep_browser_open_seconds=keep_browser_open_seconds,
+                login_poll_interval=max(0.8, PUBLISH_LOGIN_POLL_INTERVAL_SECONDS),
+                login_max_checks=max(30, PUBLISH_LOGIN_MAX_CHECKS),
             )
         )
         if result.get("success"):
@@ -1352,9 +1368,23 @@ def publish_douyin_login_start(payload: DouyinLoginStartRequest) -> JSONResponse
     _create_login_session(session)
 
     headless = False if payload.headless is None else bool(payload.headless)
+    force_scan = PUBLISH_LOGIN_FORCE_SCAN if payload.force_scan is None else bool(payload.force_scan)
+    keep_browser_open_seconds = (
+        PUBLISH_LOGIN_KEEP_BROWSER_OPEN_SECONDS
+        if payload.keep_browser_open_seconds is None
+        else int(payload.keep_browser_open_seconds)
+    )
+    keep_browser_open_seconds = max(0, min(300, keep_browser_open_seconds))
+
+    _update_login_session(
+        session_id,
+        message="登录会话已创建，正在启动扫码窗口",
+        updated_at=now_iso(),
+    )
+
     thread = threading.Thread(
         target=_run_douyin_login_session,
-        args=(session_id, account_name, headless),
+        args=(session_id, account_name, headless, force_scan, keep_browser_open_seconds),
         daemon=True,
     )
     thread.start()

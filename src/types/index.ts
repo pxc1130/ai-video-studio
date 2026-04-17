@@ -234,4 +234,6 @@ export interface PublishLoginSession {
 export interface StartDouyinLoginRequest {
   account_name?: string;
   headless?: boolean;
+  force_scan?: boolean;
+  keep_browser_open_seconds?: number;
 }

@@ -396,7 +396,7 @@ export function ExportStage({
         .catch((err: Error) => {
           setPublishError(err.message || '轮询登录状态失败');
         });
-    }, 1500);
+    }, 1000);
 
     return () => window.clearInterval(timer);
   }, [loginSession?.id, loginSession?.status]);
@@ -462,7 +462,12 @@ export function ExportStage({
     setPublishError('');
     setStartingLogin(true);
     try {
-      const res = await startDouyinLogin({ account_name: accountName, headless: false });
+      const res = await startDouyinLogin({
+        account_name: accountName,
+        headless: false,
+        force_scan: true,
+        keep_browser_open_seconds: 20,
+      });
       setLoginSession(res.session);
       setLoginAccountName(accountName);
     } catch (err: any) {
@@ -616,6 +621,8 @@ export function ExportStage({
 
                 <div className="text-[11px] text-runway-textMuted">
                   首次使用请先完成抖音扫码登录，再在这里一键提交发布。
+                  <br />
+                  开始扫码后会优先打开扫码窗口；扫码成功后窗口会短暂停留，避免立即关闭。
                 </div>
 
                 <div className={`text-[11px] rounded-lg border px-2 py-1.5 ${
